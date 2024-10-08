@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配對遊戲</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #f0f0f0;
+            height: 100vh;
+        }
+        #canvas {
+            border: 2px solid #333;
+            background-color: #fff;
+            cursor: pointer;
+        }
+        #attempts {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="attempts">已嘗試次數: 0</div>
+    <canvas id="canvas" width="700" height="700"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const size = 4;
+        const tileSize = 175; // 每個方塊的大小
+        let tiles = [];
+        let revealedTiles = [];
+        let lockedTiles = [];
+        let attempts = 0;
+
+        // 隨機生成數字並打亂
+        function initTiles() {
+            const numbers = Array.from({ length: size * size / 2 }, (_, i) => i + 1);
+            tiles = [...numbers, ...numbers];
+            tiles.sort(() => Math.random() - 0.5);
+            revealedTiles = Array(size * size).fill(false);
+            lockedTiles = Array(size * size).fill(false); // 鎖定已配對的方塊
+        }
+
+        // 繪製方塊
+        function drawTiles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const index = i * size + j;
+                    ctx.fillStyle = revealedTiles[index] || lockedTiles[index] ? '#ffffff' : '#cccccc';
+                    ctx.fillRect(j * tileSize, i * tileSize, tileSize, tileSize);
+                    ctx.strokeRect(j * tileSize, i * tileSize, tileSize, tileSize);
+                    if (revealedTiles[index] || lockedTiles[index]) {
+                        ctx.fillStyle = '#000000';
+                        ctx.font = '40px Arial';
+                        ctx.fillText(tiles[index], j * tileSize + tileSize / 2 - 10, i * tileSize + tileSize / 2 + 10);
+                    }
+                }
+            }
+        }
+
+        // 處理點擊事件
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            const i = Math.floor(y / tileSize);
+            const j = Math.floor(x / tileSize);
+            const index = i * size + j;
+
+            // 如果方塊已經鎖定或已經翻開，則無法再點擊
+            if (revealedTiles[index] || lockedTiles[index]) return;
+
+            revealedTiles[index] = true;
+            drawTiles();
+
+            const revealedIndices = revealedTiles.map((revealed, idx) => revealed ? idx : null).filter(idx => idx !== null);
+
+            // 每次只允許翻兩個方塊
+            if (revealedIndices.length === 2) {
+                const [firstIndex, secondIndex] = revealedIndices;
+                attempts++;
+                document.getElementById('attempts').textContent = `已嘗試次數: ${attempts}`;
+
+                if (tiles[firstIndex] === tiles[secondIndex]) {
+                    // 配對成功，鎖定這兩個方塊
+                    lockedTiles[firstIndex] = true;
+                    lockedTiles[secondIndex] = true;
+                    revealedTiles[firstIndex] = false; // 不再需要保持翻開狀態
+                    revealedTiles[secondIndex] = false;
+                } else {
+                    // 配對失敗，1秒後將方塊翻回去
+                    setTimeout(() => {
+                        revealedTiles[firstIndex] = false;
+                        revealedTiles[secondIndex] = false;
+                        drawTiles();
+                    }, 1000);
+                }
+            }
+
+            // 檢查是否全部翻開
+            if (lockedTiles.every(locked => locked)) {
+                setTimeout(() => {
+                    showForm(); // 顯示表單
+                }, 500);
+            }
+        });
+
+        // 顯示表單
+        function showForm() {
+            const formHtml = `
+                <div style="text-align: center;">
+                    <h2>填寫基本資料</h2>
+                    <form id="dataForm">
+                        姓名: <input type="text" id="name" required><br><br>
+                        電話: <input type="text" id="phone" required><br><br>
+                        <input type="submit" value="提交">
+                    </form>
+                    <div id="result" style="display:none;">
+                        <p>資料提交成功！</p>
+                    </div>
+                </div>
+            `;
+
+            const formWindow = window.open('', '表單', 'width=400,height=300');
+            formWindow.document.write(formHtml);
+            formWindow.document.close();
+
+            formWindow.document.getElementById('dataForm').onsubmit = function(event) {
+                event.preventDefault();
+                // 獲取玩家輸入的姓名和電話
+                const name = formWindow.document.getElementById('name').value;
+                const phone = formWindow.document.getElementById('phone').value;
+
+                // 提交資料到 Google Sheets
+                fetch('https://script.google.com/macros/s/AKfycbwQ5SVH4odV1oAEbIgSnSHQbVPHJuiL5XaNpuCczkXYgxT_PubTAWLZt41YfapD2We3Dg/exec', {
+                    method: 'POST',
+                    body: new URLSearchParams({ name: name, phone: phone }),
+                }).then(response => response.text())
+                  .then(data => {
+                      console.log(data); // 可以在這裡進行其他處理
+                      formWindow.close(); // 關閉表單視窗
+                      window.location.href = "https://deltin77.com/"; // 轉到官網
+                  }).catch(error => {
+                      console.error('Error:', error);
+                  });
+            };
+        }
+
+        // 初始化遊戲
+        initTiles();
+        drawTiles();
+    </script>
+</body>
+</html>
